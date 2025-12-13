@@ -36,3 +36,5 @@ logs/
 # Kubernetes local state
 kubeconfig
 .kube/
+CLAUDE.md
+.claude
