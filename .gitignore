@@ -1,0 +1,38 @@
+# Environment files with secrets
+config/.env
+.env
+.env.local
+.env.*.local
+
+# Certificates and private keys (mkcert, TLS)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Kubernetes local state
+kubeconfig
+.kube/

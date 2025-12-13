@@ -1,0 +1,284 @@
+# Fluent Bit - Log Collector for OpenSearch
+# https://github.com/fluent/helm-charts
+
+enabled: true
+
+chart:
+  repository: https://fluent.github.io/helm-charts
+  name: fluent-bit
+  version: ""  # Latest
+
+release:
+  name: fluent-bit
+  namespace: logging
+
+# No ingress needed - DaemonSet only
+ingress:
+  enabled: false
+
+values:
+  # Run as DaemonSet on every node
+  kind: DaemonSet
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+  # Lua scripts for log normalization (creates ConfigMap automatically)
+  luaScripts:
+    normalize.lua: |
+      function normalize_log(tag, timestamp, record)
+          local log = record["log"] or ""
+          local message = record["message"] or record["msg"] or ""
+          local level = record["level"] or record["lvl"] or record["severity"]
+          local logger = record["logger"] or record["source"] or record["component"]
+
+          -- 1. Try to parse logfmt (Grafana-style): key=value key="quoted value"
+          if message == "" and log ~= "" then
+              local lvl = log:match("level=(%w+)") or log:match("lvl=(%w+)")
+              if lvl then level = lvl end
+              local msg = log:match('msg="([^"]*)"') or log:match("msg=(%S+)")
+              if msg then message = msg end
+              local lgr = log:match("logger=(%S+)")
+              if lgr then logger = lgr end
+          end
+
+          -- 2. Try to parse access logs: IP - - [date] "METHOD PATH HTTP/x.x" STATUS SIZE
+          if message == "" and log ~= "" then
+              local method, path, status = log:match('"(%w+) ([^%s]+) HTTP/[^"]*" (%d+)')
+              if method then
+                  message = method .. " " .. path .. " -> " .. status
+                  level = "info"
+                  record["http_method"] = method
+                  record["http_path"] = path
+                  record["http_status"] = tonumber(status)
+              end
+          end
+
+          -- 3. Fallback: use raw log as message
+          if message == "" and log ~= "" then
+              message = log:gsub("\n$", "")
+          end
+
+          -- 4. Normalize level values
+          if level then
+              level = string.lower(tostring(level))
+              if level == "warn" then level = "warning"
+              elseif level == "err" then level = "error"
+              elseif level == "dbg" then level = "debug"
+              elseif level == "fat" or level == "fatal" or level == "crit" then level = "critical"
+              end
+          else
+              level = "info"
+          end
+
+          -- 5. Set normalized fields
+          record["message"] = message
+          record["level"] = level
+          if logger then record["logger"] = logger end
+
+          -- 6. Clean up source fields
+          record["log"] = nil
+          record["msg"] = nil
+          record["lvl"] = nil
+          record["severity"] = nil
+
+          return 1, timestamp, record
+      end
+
+  # Fluent Bit configuration
+  config:
+    service: |
+      [SERVICE]
+          Daemon Off
+          Flush 5
+          Log_Level info
+          Parsers_File /fluent-bit/etc/parsers.conf
+          Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
+          HTTP_Server On
+          HTTP_Listen 0.0.0.0
+          HTTP_Port 2020
+          Health_Check On
+
+    inputs: |
+      [INPUT]
+          Name tail
+          Path /var/log/containers/*.log
+          multiline.parser docker, cri
+          Tag kube.*
+          Mem_Buf_Limit 5MB
+          Skip_Long_Lines On
+          Refresh_Interval 10
+
+    filters: |
+      [FILTER]
+          Name kubernetes
+          Match kube.*
+          Merge_Log On
+          Keep_Log Off
+          K8S-Logging.Parser On
+          K8S-Logging.Exclude On
+          Labels On
+          Annotations Off
+
+      # Exclude kube-system namespace logs (too noisy)
+      [FILTER]
+          Name grep
+          Match kube.*
+          Exclude $kubernetes['namespace_name'] ^kube-system$
+
+      # Exclude fluent-bit's own logs
+      [FILTER]
+          Name grep
+          Match kube.*
+          Exclude $kubernetes['labels']['app.kubernetes.io/name'] ^fluent-bit$
+
+      # Exclude cert-manager logs (noisy)
+      [FILTER]
+          Name grep
+          Match kube.*
+          Exclude $kubernetes['namespace_name'] ^cert-manager$
+
+      # Exclude opensearch namespace (internal infra)
+      [FILTER]
+          Name grep
+          Match kube.*
+          Exclude $kubernetes['namespace_name'] ^opensearch$
+
+      # Exclude monitoring namespace (internal infra)
+      [FILTER]
+          Name grep
+          Match kube.*
+          Exclude $kubernetes['namespace_name'] ^monitoring$
+
+      # Remove unnecessary fields to save space
+      [FILTER]
+          Name record_modifier
+          Match kube.*
+          Remove_key stream
+          Remove_key logtag
+
+      # Nest kubernetes metadata under 'k8s' for cleaner structure
+      [FILTER]
+          Name nest
+          Match kube.*
+          Operation nest
+          Wildcard kubernetes*
+          Nest_under k8s
+          Remove_prefix kubernetes_
+
+      # Normalize log formats (JSON, logfmt, access logs)
+      [FILTER]
+          Name lua
+          Match kube.*
+          script /fluent-bit/scripts/normalize.lua
+          call normalize_log
+
+    outputs: |
+      [OUTPUT]
+          Name opensearch
+          Match kube.*
+          Host opensearch-cluster-master.opensearch.svc.cluster.local
+          Port 9200
+          HTTP_User admin
+          HTTP_Passwd LocalDev123!
+          tls On
+          tls.verify Off
+          Suppress_Type_Name On
+          Logstash_Format On
+          Logstash_Prefix logs
+          Logstash_DateFormat %Y.%m.%d
+          Time_Key @timestamp
+          Replace_Dots On
+          Retry_Limit 3
+          Buffer_Size 5MB
+          Generate_ID On
+
+    customParsers: |
+      [PARSER]
+          Name docker_no_time
+          Format json
+          Time_Keep Off
+          Time_Key time
+          Time_Format %Y-%m-%dT%H:%M:%S.%L
+
+      [PARSER]
+          Name json_parser
+          Format json
+          Time_Key time
+          Time_Format %Y-%m-%dT%H:%M:%S.%LZ
+
+# Create ISM policy for 1-day log retention
+postInstall: |
+  ---
+  apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: opensearch-ism-policy
+    namespace: logging
+  spec:
+    ttlSecondsAfterFinished: 300
+    template:
+      spec:
+        restartPolicy: OnFailure
+        containers:
+        - name: setup-ism
+          image: curlimages/curl:latest
+          command:
+          - /bin/sh
+          - -c
+          - |
+            # Wait for OpenSearch to be ready
+            sleep 30
+
+            # Create ISM policy for 1-day retention
+            curl -ks -u admin:LocalDev123! -X PUT \
+              "https://opensearch-cluster-master.opensearch.svc.cluster.local:9200/_plugins/_ism/policies/logs-lifecycle" \
+              -H 'Content-Type: application/json' \
+              -d '{
+                "policy": {
+                  "description": "Delete logs older than 1 day",
+                  "default_state": "hot",
+                  "states": [
+                    {
+                      "name": "hot",
+                      "actions": [],
+                      "transitions": [
+                        {
+                          "state_name": "delete",
+                          "conditions": {
+                            "min_index_age": "1d"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "name": "delete",
+                      "actions": [
+                        {
+                          "delete": {}
+                        }
+                      ],
+                      "transitions": []
+                    }
+                  ],
+                  "ism_template": {
+                    "index_patterns": ["logs-*"],
+                    "priority": 100
+                  }
+                }
+              }'
+
+            echo "ISM policy created successfully"
+
+            # Apply policy to any existing logs-* indices
+            curl -ks -u admin:LocalDev123! -X POST \
+              "https://opensearch-cluster-master.opensearch.svc.cluster.local:9200/_plugins/_ism/add/logs-*" \
+              -H 'Content-Type: application/json' \
+              -d '{"policy_id": "logs-lifecycle"}' || true
+
+            echo "ISM policy applied to existing indices"

@@ -1,0 +1,167 @@
+# Redis - Official Image
+# https://hub.docker.com/_/redis
+# Manifest-only deployment (no helm chart)
+
+enabled: true
+
+chart:
+  repository: ""
+  name: ""
+  version: ""
+
+release:
+  name: redis
+  namespace: redis
+
+ingress:
+  enabled: false
+
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: redis
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: redis-credentials
+    namespace: redis
+  type: Opaque
+  stringData:
+    password: "LocalDev123!"
+  ---
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: redis-config
+    namespace: redis
+  data:
+    redis.conf: |
+      maxmemory 200mb
+      maxmemory-policy allkeys-lru
+      appendonly yes
+      requirepass LocalDev123!
+  ---
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: redis-data
+    namespace: redis
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: standard
+    resources:
+      requests:
+        storage: 1Gi
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: redis
+    namespace: redis
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: redis
+    template:
+      metadata:
+        labels:
+          app: redis
+      spec:
+        containers:
+        - name: redis
+          image: redis:7-alpine
+          command: ["redis-server", "/etc/redis/redis.conf"]
+          ports:
+          - containerPort: 6379
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          volumeMounts:
+          - name: data
+            mountPath: /data
+          - name: config
+            mountPath: /etc/redis
+        - name: redis-exporter
+          image: oliver006/redis_exporter:latest
+          ports:
+          - containerPort: 9121
+            name: metrics
+          env:
+          - name: REDIS_ADDR
+            value: "redis://localhost:6379"
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: redis-credentials
+                key: password
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+        volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data
+        - name: config
+          configMap:
+            name: redis-config
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: redis
+    namespace: redis
+  spec:
+    type: ClusterIP
+    ports:
+    - port: 6379
+      targetPort: 6379
+    selector:
+      app: redis
+  ---
+  # Expose Redis TCP port via nginx ingress
+  # Note: tcp-services ConfigMap entry added via: kubectl patch configmap tcp-services -n ingress-nginx --type merge -p '{"data":{"6379":"redis/redis:6379"}}'
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: nginx-redis
+    namespace: ingress-nginx
+  spec:
+    type: LoadBalancer
+    ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+    selector:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  ---
+  # VMPodScrape for Redis metrics (VictoriaMetrics)
+  apiVersion: operator.victoriametrics.com/v1beta1
+  kind: VMPodScrape
+  metadata:
+    name: redis
+    namespace: redis
+    labels:
+      release: vm
+  spec:
+    podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      scheme: http
+    selector:
+      matchLabels:
+        app: redis

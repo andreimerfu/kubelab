@@ -1,0 +1,154 @@
+# ArgoCD GitOps Applications Bootstrap
+# Configures ApplicationSet for auto-discovering apps from GitLab
+#
+# Prerequisites:
+#   1. ArgoCD must be deployed: make chart-argocd
+#   2. Configure GitLab settings in config/.env:
+#      GITLAB_HOST=gitlab.example.com
+#      GITLAB_ORG=your-org
+#      GITLAB_REPO=gitops-apps
+#      GITLAB_TOKEN=glpat-xxxxxxxxxxxx
+#
+# Usage:
+#   make chart-argocd-apps
+#
+# GitOps Repository Structure:
+#   gitops-apps/
+#   └── apps/
+#       ├── app1/          # Each folder becomes an ArgoCD Application
+#       │   └── *.yaml     # Helm, Kustomize, or plain YAML
+#       └── app2/
+#           └── *.yaml
+
+enabled: true
+
+chart:
+  repository: ""
+  name: ""
+  version: ""
+
+release:
+  name: argocd-apps
+  namespace: argocd
+
+# Copy mkcert CA for TLS verification (if GitLab uses it)
+requiresMkcertCA: true
+
+ingress:
+  enabled: false
+
+postInstall: |
+  ---
+  # GitLab Repository Credentials
+  # Token is substituted from GITLAB_TOKEN environment variable
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: gitlab-repo-creds
+    namespace: argocd
+    labels:
+      argocd.argoproj.io/secret-type: repo-creds
+  type: Opaque
+  stringData:
+    type: git
+    url: "https://${GITLAB_HOST}"
+    username: gitlab-ci-token
+    password: "${GITLAB_TOKEN}"
+    insecure: "true"
+  ---
+  # AppProject for GitOps managed applications
+  apiVersion: argoproj.io/v1alpha1
+  kind: AppProject
+  metadata:
+    name: gitops
+    namespace: argocd
+    finalizers:
+      - resources-finalizer.argocd.argoproj.io
+  spec:
+    description: "GitOps managed applications from GitLab"
+
+    # Source repositories
+    sourceRepos:
+      - "https://${GITLAB_HOST}/${GITLAB_ORG}/*"
+      - "https://*"  # Allow external Helm chart repos
+
+    # Allowed cluster destinations
+    destinations:
+      - namespace: "*"
+        server: "https://kubernetes.default.svc"
+
+    # Allow all cluster-scoped resources
+    clusterResourceWhitelist:
+      - group: "*"
+        kind: "*"
+
+    # Allow all namespace-scoped resources
+    namespaceResourceWhitelist:
+      - group: "*"
+        kind: "*"
+
+    # Monitor for orphaned resources
+    orphanedResources:
+      warn: true
+  ---
+  # ApplicationSet - Auto-discovers apps from apps/* directories
+  # Supports: Helm (Chart.yaml), Kustomize (kustomization.yaml), Plain YAML
+  apiVersion: argoproj.io/v1alpha1
+  kind: ApplicationSet
+  metadata:
+    name: gitops-apps
+    namespace: argocd
+  spec:
+    goTemplate: true
+    goTemplateOptions: ["missingkey=error"]
+
+    generators:
+      # Git directory generator - discovers app folders
+      - git:
+          repoURL: "https://${GITLAB_HOST}/${GITLAB_ORG}/${GITLAB_REPO}.git"
+          revision: HEAD
+          directories:
+            - path: "apps/*"
+            # Exclude specific directories if needed:
+            # - path: "apps/disabled-*"
+            #   exclude: true
+
+    template:
+      metadata:
+        name: "{{.path.basename}}"
+        namespace: argocd
+        labels:
+          app.kubernetes.io/managed-by: argocd-applicationset
+          gitops.source: gitlab
+        finalizers:
+          - resources-finalizer.argocd.argoproj.io
+      spec:
+        project: gitops
+
+        source:
+          repoURL: "https://${GITLAB_HOST}/${GITLAB_ORG}/${GITLAB_REPO}.git"
+          targetRevision: HEAD
+          path: "{{.path.path}}"
+
+        destination:
+          server: "https://kubernetes.default.svc"
+          # Namespace matches app directory name
+          namespace: "{{.path.basename}}"
+
+        # Auto-sync policy - syncs automatically on git changes
+        syncPolicy:
+          automated:
+            prune: true      # Remove resources not in git
+            selfHeal: true   # Revert manual changes
+            allowEmpty: false
+          syncOptions:
+            - CreateNamespace=true
+            - PrunePropagationPolicy=foreground
+            - PruneLast=true
+            - ApplyOutOfSyncOnly=true
+          retry:
+            limit: 5
+            backoff:
+              duration: 5s
+              factor: 2
+              maxDuration: 3m

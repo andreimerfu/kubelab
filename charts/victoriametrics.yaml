@@ -1,0 +1,104 @@
+# VictoriaMetrics K8s Stack - Monitoring Solution
+# https://github.com/VictoriaMetrics/helm-charts/tree/master/charts/victoria-metrics-k8s-stack
+
+enabled: true
+
+chart:
+  repository: https://victoriametrics.github.io/helm-charts
+  name: victoria-metrics-k8s-stack
+  version: ""  # Latest
+
+release:
+  name: vm
+  namespace: monitoring
+
+# Ingress configuration - only Grafana exposed
+ingress:
+  enabled: true
+  name: grafana
+  backendProtocol: HTTP
+  serviceName: vm-grafana
+  servicePort: 80
+
+# Helm values optimized for minikube
+values:
+  # VMSingle - single-node metrics storage
+  vmsingle:
+    enabled: true
+    spec:
+      retentionPeriod: "7d"
+      storage:
+        resources:
+          requests:
+            storage: 5Gi
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+
+  # VMAgent - metrics collection
+  vmagent:
+    enabled: true
+    spec:
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "128Mi"
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+
+  # VMAlert - alerting engine
+  vmalert:
+    enabled: true
+    spec:
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"
+
+  # Alertmanager
+  alertmanager:
+    enabled: true
+    spec:
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+
+  # Grafana - visualization
+  grafana:
+    enabled: true
+    adminPassword: "LocalDev123!"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "300m"
+        memory: "256Mi"
+
+  # Disable control plane scraping - problematic in minikube
+  kubeScheduler:
+    enabled: false
+
+  kubeControllerManager:
+    enabled: false
+
+  kubeEtcd:
+    enabled: false
+
+  kubeProxy:
+    enabled: false
+
+  kubeDns:
+    enabled: false

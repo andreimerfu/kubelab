@@ -1,0 +1,169 @@
+# ArgoCD - GitOps Continuous Delivery
+# https://github.com/argoproj/argo-helm
+
+enabled: true
+
+chart:
+  repository: https://argoproj.github.io/argo-helm
+  name: argo-cd
+  version: ""  # Latest
+
+release:
+  name: argocd
+  namespace: argocd
+
+# Copy mkcert CA for OIDC TLS verification
+requiresMkcertCA: true
+
+ingress:
+  enabled: true
+  name: console
+  backendProtocol: HTTP
+  serviceName: argocd-server
+  servicePort: 80
+
+values:
+  # Global settings
+  global:
+    domain: console.argocd.minikube.local
+
+  # Disable built-in Redis - use external Redis
+  redis:
+    enabled: false
+
+  # External Redis configuration
+  externalRedis:
+    host: redis.redis.svc.cluster.local
+    port: 6379
+    password: "LocalDev123!"
+
+  # ArgoCD Server
+  server:
+    replicas: 1
+
+    # Disable TLS on server since ingress handles it
+    extraArgs:
+      - --insecure
+
+    # Mount mkcert CA for OIDC TLS verification
+    volumeMounts:
+      - name: mkcert-ca
+        mountPath: /etc/ssl/certs/mkcert-ca.crt
+        subPath: ca.crt
+        readOnly: true
+
+    volumes:
+      - name: mkcert-ca
+        configMap:
+          name: mkcert-ca
+
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  # Repo Server
+  repoServer:
+    replicas: 1
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  # Application Controller
+  controller:
+    replicas: 1
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  # ApplicationSet Controller
+  applicationSet:
+    replicas: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+
+  # Notifications Controller
+  notifications:
+    enabled: true
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+
+  # Dex (SSO) - disabled, using external Dex
+  dex:
+    enabled: false
+
+  # Config
+  configs:
+    params:
+      # Server runs behind TLS-terminating ingress
+      server.insecure: true
+
+    # ConfigMap settings (argocd-cm)
+    cm:
+      # URL for ArgoCD
+      url: https://console.argocd.minikube.local
+
+      # OIDC configuration - external Dex
+      oidc.config: |
+        name: Dex
+        issuer: https://auth.dex.minikube.local
+        clientID: argocd
+        clientSecret: $oidc.dex.clientSecret
+        requestedScopes:
+          - openid
+          - profile
+          - email
+        rootCA: /etc/ssl/certs/mkcert-ca.crt
+
+    # RBAC configuration
+    rbac:
+      policy.csv: |
+        # Admin access for admin user
+        g, admin@minikube.local, role:admin
+        # Read-only access for developers
+        g, developer@minikube.local, role:readonly
+      policy.default: role:readonly
+
+    # Secrets
+    secret:
+      createSecret: true
+      extra:
+        # OIDC client secret for Dex
+        oidc.dex.clientSecret: argocd-sso-secret
+
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: argocd-credentials
+    namespace: argocd
+  type: Opaque
+  stringData:
+    # Default admin password - retrieve with:
+    # kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+    info: "Run: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d"
+    # SSO Users (from Dex)
+    sso-admin: "admin@minikube.local / admin123"
+    sso-developer: "developer@minikube.local / dev123"

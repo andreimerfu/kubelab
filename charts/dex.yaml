@@ -1,0 +1,97 @@
+# Dex - OIDC Identity Provider
+# https://github.com/dexidp/helm-charts
+
+enabled: true
+
+chart:
+  repository: https://charts.dexidp.io
+  name: dex
+  version: ""  # Latest
+
+release:
+  name: dex
+  namespace: dex
+
+ingress:
+  enabled: true
+  name: auth
+  backendProtocol: HTTP
+  serviceName: dex
+  servicePort: 5556
+
+values:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  config:
+    # Issuer URL - must match the external URL
+    issuer: https://auth.dex.minikube.local
+
+    # Storage backend - use PostgreSQL
+    storage:
+      type: postgres
+      config:
+        host: postgresql-cluster-rw.postgresql.svc.cluster.local
+        port: 5432
+        database: dex
+        user: dex
+        password: LocalDex321
+        ssl:
+          mode: require
+
+    # Web server configuration
+    web:
+      http: 0.0.0.0:5556
+
+    # Enable password database connector for local dev
+    enablePasswordDB: true
+
+    # Static passwords for local development
+    # Generate hash: htpasswd -nbBC 10 user password | cut -d: -f2 | sed 's/$2y$/$2a$/'
+    staticPasswords:
+      - email: admin@minikube.local
+        # Password: admin123
+        hash: "$2a$10$mOPdKjSRp7CJGq53EgPaxOcY4Du5lhLZF1lOx/PqxD3GrYWbhUPhi"
+        username: admin
+        userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+      - email: developer@minikube.local
+        # Password: dev123
+        hash: "$2a$10$5wmEZjoFXpLW5gT8f.XVJ.4xq6uGgrZAcHKM0R9oLE/EhXLnlu6BW"
+        username: developer
+        userID: "41331323-6f44-45e6-b3b9-2c4b60c02be5"
+
+    # OAuth2 clients
+    staticClients:
+      # ArgoCD
+      - id: argocd
+        name: ArgoCD
+        secret: argocd-sso-secret
+        redirectURIs:
+          - https://console.argocd.minikube.local/auth/callback
+
+    # Connectors - add more as needed (GitHub, Google, LDAP, etc.)
+    connectors: []
+
+# Database is auto-provisioned by CloudNativePG (see cloudnative-pg.yaml managed section)
+# To add Dex database: ensure 'dex' role and database are in cloudnative-pg.yaml
+
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: dex-credentials
+    namespace: dex
+  type: Opaque
+  stringData:
+    admin-email: admin@minikube.local
+    admin-password: admin123
+    developer-email: developer@minikube.local
+    developer-password: dev123

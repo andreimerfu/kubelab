@@ -1,0 +1,150 @@
+# OpenSearch - Search and Analytics Engine
+# https://github.com/opensearch-project/helm-charts
+
+enabled: true
+
+chart:
+  repository: https://opensearch-project.github.io/helm-charts
+  name: opensearch
+  version: ""  # Latest
+
+release:
+  name: opensearch
+  namespace: opensearch
+
+# Ingress configuration
+# Hostname pattern: <name>.<namespace>.minikube.local
+ingress:
+  enabled: true
+  # Just the name part - script adds .<namespace>.<domain>
+  name: opensearch
+  backendProtocol: HTTPS
+  serviceName: opensearch-cluster-master
+  servicePort: 9200
+
+# Helm values to pass to the chart
+values:
+  singleNode: true
+  replicas: 1
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  persistence:
+    enabled: false
+
+  extraEnvs:
+    - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      value: "LocalDev123!"
+    - name: DISABLE_INSTALL_DEMO_CONFIG
+      value: "false"
+
+  sysctlInit:
+    enabled: false
+
+  service:
+    type: ClusterIP
+    port: 9200
+
+  # Prometheus metrics exporter plugin
+  plugins:
+    enabled: true
+    installList:
+      - https://github.com/aiven/prometheus-exporter-plugin-for-opensearch/releases/download/3.3.2.0/prometheus-exporter-3.3.2.0.zip
+
+# VMServiceScrape for VictoriaMetrics (applied after helm install)
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: opensearch-credentials
+    namespace: opensearch
+  type: Opaque
+  stringData:
+    username: admin
+    password: "LocalDev123!"
+  ---
+  apiVersion: operator.victoriametrics.com/v1beta1
+  kind: VMServiceScrape
+  metadata:
+    name: opensearch
+    namespace: opensearch
+    labels:
+      release: vm
+  spec:
+    namespaceSelector:
+      matchNames:
+        - opensearch
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: opensearch
+    endpoints:
+      - port: http
+        path: /_prometheus/metrics
+        scheme: https
+        tlsConfig:
+          insecureSkipVerify: true
+        basicAuth:
+          username:
+            name: opensearch-credentials
+            key: username
+          password:
+            name: opensearch-credentials
+            key: password
+
+---
+# OpenSearch Dashboards - UI for OpenSearch
+
+enabled: true
+
+chart:
+  repository: https://opensearch-project.github.io/helm-charts
+  name: opensearch-dashboards
+  version: ""  # Latest
+
+release:
+  name: opensearch-dashboards
+  namespace: opensearch
+
+ingress:
+  enabled: true
+  name: dashboards
+  backendProtocol: HTTP
+  serviceName: opensearch-dashboards
+  servicePort: 5601
+
+values:
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  opensearchHosts: "https://opensearch-cluster-master:9200"
+
+  service:
+    type: ClusterIP
+    port: 5601
+
+  # Disable multi-tenancy for simpler local dev experience
+  config:
+    opensearch_dashboards.yml: |
+      server.host: "0.0.0.0"
+      opensearch.hosts: ["https://opensearch-cluster-master:9200"]
+      opensearch.ssl.verificationMode: none
+      opensearch.username: admin
+      opensearch.password: LocalDev123!
+      opensearch.requestHeadersWhitelist: ["securitytenant","Authorization"]
+      opensearch_security.multitenancy.enabled: false
+      opensearch_security.readonly_mode.roles: ["kibana_read_only"]
+      server.ssl.enabled: false
