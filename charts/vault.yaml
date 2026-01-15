@@ -1,0 +1,103 @@
+# HashiCorp Vault - Secrets Management
+# https://github.com/hashicorp/vault-helm
+
+enabled: true
+
+chart:
+  repository: https://helm.releases.hashicorp.com
+  name: vault
+  version: "" # Latest
+
+release:
+  name: vault
+  namespace: vault
+
+ingress:
+  enabled: true
+  name: console
+  backendProtocol: HTTP
+  serviceName: vault-ui
+  servicePort: 8200
+
+values:
+  global:
+    enabled: true
+
+  server:
+    enabled: true
+
+    # Dev mode for local development - auto-unseals and stores data in memory
+    dev:
+      enabled: true
+      devRootToken: "root"
+
+    # Enable Prometheus metrics
+    extraEnvironmentVars:
+      VAULT_TELEMETRY_PROMETHEUS_RETENTION_TIME: "30s"
+
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+    # Standalone mode (no HA for local dev)
+    standalone:
+      enabled: true
+
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 8200
+
+  ui:
+    enabled: true
+    serviceType: ClusterIP
+    servicePort: 8200
+
+  injector:
+    enabled: true
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "250m"
+
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: vault-credentials
+    namespace: vault
+  type: Opaque
+  stringData:
+    root-token: "root"
+  ---
+  # VMServiceScrape for VictoriaMetrics
+  apiVersion: operator.victoriametrics.com/v1beta1
+  kind: VMServiceScrape
+  metadata:
+    name: vault
+    namespace: vault
+    labels:
+      release: vm
+  spec:
+    namespaceSelector:
+      matchNames:
+        - vault
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: vault
+    endpoints:
+      - port: http
+        path: /v1/sys/metrics
+        params:
+          format: ["prometheus"]
+        bearerTokenSecret:
+          name: vault-credentials
+          key: root-token

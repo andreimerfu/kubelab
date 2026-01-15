@@ -132,7 +132,7 @@ postInstall: |
     username: developer
     password: "LocalDev123!"
   ---
-  # TCP routing for PostgreSQL and Redis (nginx reads from 'tcp-services' ConfigMap)
+  # TCP routing for PostgreSQL, Redis, OpenSearch (nginx reads from 'tcp-services' ConfigMap)
   apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -142,6 +142,7 @@ postInstall: |
     "5432": "postgresql/postgresql-cluster-rw:5432"
     "5433": "postgresql/postgresql-cluster-ro:5432"
     "6379": "redis/redis:6379"
+    "9200": "opensearch/opensearch-cluster-master:9200"
   ---
   # Expose PostgreSQL TCP ports via nginx ingress
   apiVersion: v1

@@ -1,0 +1,49 @@
+# Docker Compose Reference for Minikube Services
+#
+# This file demonstrates how to configure Docker Compose services
+# to access minikube infrastructure (PostgreSQL, Redis, OpenSearch, etc.)
+#
+# Option 1: Copy the extra_hosts block to your services
+# Option 2: Run `make docker-patch FILE=/path/to/your/docker-compose.yml`
+#
+# Prerequisites:
+#   - minikube cluster running: make start
+#   - minikube tunnel running: make tunnel (Terminal 1)
+#   - docker bridge running:   make docker-bridge (Terminal 2)
+#
+# Get actual credentials: make creds
+
+services:
+  # Example application service
+  example-app:
+    image: your-app-image
+    environment:
+      # PostgreSQL (get actual password with: make creds)
+      DATABASE_URL: postgresql://app:${PG_PASSWORD}@postgresql.minikube.local:5432/app
+      PGHOST: postgresql.minikube.local
+      PGPORT: "5432"
+      PGDATABASE: app
+      PGUSER: app
+      PGPASSWORD: "${PG_PASSWORD}"
+
+      # Redis
+      REDIS_URL: redis://:LocalDev123!@redis.minikube.local:6379
+      REDIS_HOST: redis.minikube.local
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: "LocalDev123!"
+
+      # OpenSearch
+      OPENSEARCH_URL: https://opensearch.opensearch.minikube.local
+      OPENSEARCH_USERNAME: admin
+      OPENSEARCH_PASSWORD: "LocalDev123!"
+
+    # Required: Map minikube hostnames to host machine
+    # This allows containers to resolve *.minikube.local addresses
+    extra_hosts:
+      - "postgresql.minikube.local:host-gateway"
+      - "redis.minikube.local:host-gateway"
+      - "opensearch.opensearch.minikube.local:host-gateway"
+      - "dashboards.opensearch.minikube.local:host-gateway"
+      - "grafana.monitoring.minikube.local:host-gateway"
+      - "console.argocd.minikube.local:host-gateway"
+      - "auth.dex.minikube.local:host-gateway"

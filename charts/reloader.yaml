@@ -1,0 +1,55 @@
+# Stakater Reloader - Auto-reload deployments on ConfigMap/Secret changes
+# https://github.com/stakater/Reloader
+
+enabled: true
+
+chart:
+  repository: https://stakater.github.io/stakater-charts
+  name: reloader
+  version: "" # Latest
+
+release:
+  name: reloader
+  namespace: reloader
+
+ingress:
+  enabled: false
+
+values:
+  fullnameOverride: reloader
+
+  reloader:
+    watchGlobally: true
+    reloadOnCreate: true
+    reloadOnDelete: false
+
+    deployment:
+      replicas: 1
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "64Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
+
+    # Prometheus metrics
+    podMonitor:
+      enabled: false
+
+postInstall: |
+  ---
+  apiVersion: operator.victoriametrics.com/v1beta1
+  kind: VMPodScrape
+  metadata:
+    name: reloader
+    namespace: reloader
+    labels:
+      release: vm
+  spec:
+    podMetricsEndpoints:
+      - port: http
+        path: /metrics
+    selector:
+      matchLabels:
+        app: reloader

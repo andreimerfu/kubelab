@@ -55,7 +55,7 @@ values:
   plugins:
     enabled: true
     installList:
-      - https://github.com/aiven/prometheus-exporter-plugin-for-opensearch/releases/download/3.3.2.0/prometheus-exporter-3.3.2.0.zip
+      - https://github.com/aiven/prometheus-exporter-plugin-for-opensearch/releases/download/3.4.0.0/prometheus-exporter-3.4.0.0.zip
 
 # VMServiceScrape for VictoriaMetrics (applied after helm install)
 postInstall: |
@@ -97,6 +97,23 @@ postInstall: |
           password:
             name: opensearch-credentials
             key: password
+  ---
+  # Expose OpenSearch TCP port via nginx ingress (for Docker Compose access)
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: nginx-opensearch
+    namespace: ingress-nginx
+  spec:
+    type: LoadBalancer
+    ports:
+    - name: opensearch
+      port: 9200
+      targetPort: 9200
+      protocol: TCP
+    selector:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
 
 ---
 # OpenSearch Dashboards - UI for OpenSearch

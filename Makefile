@@ -1,4 +1,4 @@
-.PHONY: all prerequisites cluster dns certs charts dashboards tunnel dashboard status clean help
+.PHONY: all prerequisites cluster dns certs charts dashboards tunnel docker-bridge dashboard status creds docker-hosts docker-patch clean help
 
 SHELL := /bin/bash
 DOMAIN ?= minikube.local
@@ -72,6 +72,11 @@ tunnel:
 	@echo ""
 	@minikube tunnel -p $(CLUSTER_NAME)
 
+# Bridge minikube services to Docker containers (run in separate terminal)
+# Required when using Docker Compose with minikube services
+docker-bridge:
+	@$(SCRIPTS_DIR)/docker-bridge.sh
+
 # Open Kubernetes dashboard
 dashboard:
 	@minikube dashboard -p $(CLUSTER_NAME)
@@ -98,6 +103,22 @@ status:
 	@echo ""
 	@echo "=== Certificates ==="
 	@kubectl get certificates -A 2>/dev/null || echo "No certificates found"
+
+# Show service connection details and credentials
+creds:
+	@DOMAIN=$(DOMAIN) $(SCRIPTS_DIR)/show-connections.sh
+
+# Show extra_hosts snippet for Docker Compose
+docker-hosts:
+	@DOMAIN=$(DOMAIN) $(SCRIPTS_DIR)/docker-hosts.sh
+
+# Patch a docker-compose.yml to add extra_hosts (requires yq)
+# Usage: make docker-patch FILE=/path/to/docker-compose.yml
+docker-patch:
+ifndef FILE
+	$(error Usage: make docker-patch FILE=/path/to/docker-compose.yml)
+endif
+	@DOMAIN=$(DOMAIN) $(SCRIPTS_DIR)/docker-patch.sh $(FILE)
 
 # Start fresh - stop cluster but keep config
 stop:
@@ -148,10 +169,16 @@ help:
 	@echo ""
 	@echo "Management:"
 	@echo "  status          - Show cluster and services status"
+	@echo "  creds           - Show service URLs and credentials"
 	@echo "  dashboard       - Open Kubernetes dashboard"
 	@echo "  start           - Start existing cluster"
 	@echo "  stop            - Stop cluster (keeps data)"
 	@echo "  clean           - Delete cluster and DNS config"
+	@echo ""
+	@echo "Docker Integration:"
+	@echo "  docker-bridge   - Bridge ports for Docker (run with tunnel)"
+	@echo "  docker-hosts    - Show extra_hosts snippet for docker-compose"
+	@echo "  docker-patch    - Patch compose file (make docker-patch FILE=...)"
 	@echo ""
 	@echo "Variables:"
 	@echo "  DOMAIN=$(DOMAIN)"
