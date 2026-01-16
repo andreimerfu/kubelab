@@ -76,19 +76,19 @@ values:
         secret:
           name: postgresql-credentials
 
-  # Declarative role management (top-level, not under cluster)
-  # See: https://cloudnative-pg.io/documentation/current/declarative_role_management/
-  roles:
-    - name: dex
-      ensure: present
-      login: true
-      passwordSecret:
-        name: dex-db-credentials
-    - name: argocd
-      ensure: present
-      login: true
-      passwordSecret:
-        name: argocd-db-credentials
+    # Declarative role management (under cluster section)
+    # See: https://cloudnative-pg.io/documentation/current/declarative_role_management/
+    roles:
+      - name: dex
+        ensure: present
+        login: true
+        passwordSecret:
+          name: dex-db-credentials
+      - name: argocd
+        ensure: present
+        login: true
+        passwordSecret:
+          name: argocd-db-credentials
 
   # Declarative database management (top-level)
   databases:
