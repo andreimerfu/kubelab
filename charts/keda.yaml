@@ -1,0 +1,43 @@
+# https://keda.sh
+# https://github.com/kedacore/charts
+
+enabled: true
+
+chart:
+  repository: https://kedacore.github.io/charts
+  name: keda
+  version: ""
+
+release:
+  name: keda
+  namespace: keda
+
+ingress:
+  enabled: false
+
+values:
+  operator:
+    replicaCount: 1
+  metricsServer:
+    replicaCount: 1
+  webhooks:
+    replicaCount: 1
+  resources:
+    operator:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+    metricServer:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+    webhooks:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
