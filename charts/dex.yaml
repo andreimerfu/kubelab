@@ -6,7 +6,7 @@ enabled: true
 chart:
   repository: https://charts.dexidp.io
   name: dex
-  version: ""  # Latest
+  version: "" # Latest
 
 release:
   name: dex
@@ -75,9 +75,40 @@ values:
         secret: argocd-sso-secret
         redirectURIs:
           - https://console.argocd.minikube.local/auth/callback
+      # pLLM
+      - id: pllm-web
+        name: PLLM Web UI
+        secret: pllm-web-secret
+        redirectURIs:
+          - https://dashboard.pllm.minikube.local/auth/callback
+          - https://dashboard.pllm.minikube.local/ui/callback
+          - http://localhost:8080/auth/callback
+          - http://localhost:8080/ui/callback
+          - http://localhost:3000/auth/callback
+          - http://localhost:5173/auth/callback
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        scopes:
+          - openid
+          - profile
+          - email
+          - offline_access
 
-    # Connectors - add more as needed (GitHub, Google, LDAP, etc.)
-    connectors: []
+    # Connectors
+    connectors:
+      - type: microsoft
+        id: microsoft
+        name: Microsoft Entra ID
+        config:
+          clientID: ${ENTRA_CLIENT_ID}
+          clientSecret: ${ENTRA_CLIENT_SECRET}
+          tenant: ${ENTRA_TENANT_ID}
+          redirectURI: https://auth.dex.minikube.local/callback
+          scopes:
+            - openid
+            - profile
+            - email
 
 # Database is auto-provisioned by CloudNativePG (see cloudnative-pg.yaml managed section)
 # To add Dex database: ensure 'dex' role and database are in cloudnative-pg.yaml

@@ -18,8 +18,14 @@ GITLAB_ORG="${GITLAB_ORG:-your-org}"
 GITLAB_REPO="${GITLAB_REPO:-gitops-apps}"
 GITLAB_TOKEN="${GITLAB_TOKEN:-}"
 
+# Microsoft Entra ID (for Dex OIDC connector)
+ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
+ENTRA_CLIENT_SECRET="${ENTRA_CLIENT_SECRET:-}"
+ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-}"
+
 # Export variables for envsubst
 export DOMAIN GITLAB_HOST GITLAB_ORG GITLAB_REPO GITLAB_TOKEN
+export ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET ENTRA_TENANT_ID
 
 # Colors for output
 RED='\033[0;31m'
@@ -114,6 +120,11 @@ deploy_chart() {
         # Extract and write values to temp file
         local values_file=$(mktemp)
         yq "${sel}.values // {}" "$file" > "$values_file" 2>/dev/null
+
+        # Substitute env vars in values (explicit list only, to avoid breaking bcrypt hashes etc.)
+        local values_subst=$(mktemp)
+        envsubst '$DOMAIN $GITLAB_HOST $GITLAB_ORG $GITLAB_REPO $GITLAB_TOKEN $ENTRA_CLIENT_ID $ENTRA_CLIENT_SECRET $ENTRA_TENANT_ID' < "$values_file" > "$values_subst"
+        mv "$values_subst" "$values_file"
 
         if [ -s "$values_file" ] && [ "$(cat $values_file)" != "{}" ] && [ "$(cat $values_file)" != "null" ]; then
             helm_cmd+=" -f $values_file"
