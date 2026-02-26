@@ -6,7 +6,7 @@ enabled: true
 chart:
   repository: https://opensearch-project.github.io/helm-charts
   name: opensearch
-  version: ""  # Latest
+  version: "3.4.0" # Latest
 
 release:
   name: opensearch
@@ -123,7 +123,7 @@ enabled: true
 chart:
   repository: https://opensearch-project.github.io/helm-charts
   name: opensearch-dashboards
-  version: ""  # Latest
+  version: "" # Latest
 
 release:
   name: opensearch-dashboards

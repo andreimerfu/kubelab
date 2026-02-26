@@ -21,6 +21,7 @@ PORTS=(
     "5433"   # PostgreSQL RO
     "6379"   # Redis
     "9200"   # OpenSearch
+    "4222"   # NATS
 )
 
 cleanup() {

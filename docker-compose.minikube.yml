@@ -32,6 +32,11 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: "LocalDev123!"
 
+      # NATS
+      NATS_URL: nats://nats.minikube.local:4222
+      NATS_HOST: nats.minikube.local
+      NATS_PORT: "4222"
+
       # OpenSearch
       OPENSEARCH_URL: https://opensearch.opensearch.minikube.local
       OPENSEARCH_USERNAME: admin
@@ -47,3 +52,4 @@ services:
       - "grafana.monitoring.minikube.local:host-gateway"
       - "console.argocd.minikube.local:host-gateway"
       - "auth.dex.minikube.local:host-gateway"
+      - "nats.minikube.local:host-gateway"

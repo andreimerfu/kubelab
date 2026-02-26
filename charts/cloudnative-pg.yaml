@@ -143,6 +143,7 @@ postInstall: |
     "5433": "postgresql/postgresql-cluster-ro:5432"
     "6379": "redis/redis:6379"
     "9200": "opensearch/opensearch-cluster-master:9200"
+    "4222": "nats/nats:4222"
   ---
   # Expose PostgreSQL TCP ports via nginx ingress
   apiVersion: v1

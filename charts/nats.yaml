@@ -1,0 +1,170 @@
+# NATS - High-Performance Messaging with JetStream
+# https://nats-io.github.io/k8s/helm/charts/
+
+enabled: true
+
+chart:
+  repository: https://nats-io.github.io/k8s/helm/charts/
+  name: nats
+  version: ""
+
+release:
+  name: nats
+  namespace: nats
+
+ingress:
+  enabled: true
+  name: monitoring
+  backendProtocol: HTTP
+  serviceName: nats
+  servicePort: 8222
+
+values:
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 1Gi
+          storageClassName: standard
+    monitor:
+      enabled: true
+      port: 8222
+
+  container:
+    merge:
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+
+  promExporter:
+    enabled: true
+    port: 7777
+
+  natsBox:
+    enabled: false
+
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: nats-credentials
+    namespace: nats
+  type: Opaque
+  stringData:
+    url: "nats://nats.nats.svc:4222"
+  ---
+  # Expose NATS TCP port via nginx ingress
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: nginx-nats
+    namespace: ingress-nginx
+  spec:
+    type: LoadBalancer
+    ports:
+    - name: nats
+      port: 4222
+      targetPort: 4222
+      protocol: TCP
+    selector:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  ---
+  # VMPodScrape for NATS metrics (VictoriaMetrics)
+  apiVersion: operator.victoriametrics.com/v1beta1
+  kind: VMPodScrape
+  metadata:
+    name: nats
+    namespace: nats
+    labels:
+      release: vm
+  spec:
+    podMetricsEndpoints:
+    - port: prom-metrics
+      path: /metrics
+      scheme: http
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: nats
+
+---
+# NATS Dashboard (Web UI)
+# https://github.com/mdawar/nats-dashboard
+
+enabled: true
+
+chart:
+  repository: ""
+  name: ""
+  version: ""
+
+release:
+  name: nats-dashboard
+  namespace: nats
+
+ingress:
+  enabled: true
+  name: dashboard
+  backendProtocol: HTTP
+  serviceName: nats-dashboard
+  servicePort: 80
+
+postInstall: |
+  ---
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: nats-dashboard-config
+    namespace: nats
+  data:
+    config.json: |
+      {
+        "serverUrl": "https://monitoring.nats.$DOMAIN"
+      }
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: nats-dashboard
+    namespace: nats
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: nats-dashboard
+    template:
+      metadata:
+        labels:
+          app: nats-dashboard
+      spec:
+        containers:
+        - name: nats-dashboard
+          image: mdawar/nats-dashboard:latest
+          ports:
+          - containerPort: 80
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: nats-dashboard
+    namespace: nats
+  spec:
+    type: ClusterIP
+    ports:
+    - port: 80
+      targetPort: 80
+    selector:
+      app: nats-dashboard

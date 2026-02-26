@@ -16,4 +16,5 @@ extra_hosts:
   - "grafana.monitoring.$DOMAIN:host-gateway"
   - "console.argocd.$DOMAIN:host-gateway"
   - "auth.dex.$DOMAIN:host-gateway"
+  - "nats.$DOMAIN:host-gateway"
 EOF
