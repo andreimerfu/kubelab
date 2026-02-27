@@ -1,0 +1,39 @@
+# Mailpit - Email Testing Tool (SMTP capture + Web UI)
+# https://github.com/axllent/mailpit
+# https://artifacthub.io/packages/helm/jouve/mailpit
+
+enabled: true
+
+chart:
+  repository: https://jouve.github.io/charts/
+  name: mailpit
+  version: ""
+
+release:
+  name: mailpit
+  namespace: mailpit
+
+ingress:
+  enabled: true
+  name: dashboard
+  backendProtocol: HTTP
+  serviceName: mailpit-http
+  servicePort: 80
+
+values:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: "10m"
+      memory: "32Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  service:
+    smtp:
+      port: 1025
+
+  persistence:
+    enabled: false
